@@ -475,7 +475,7 @@ export default function BudgetsTab() {
         {/* Sort dropdown */}
         <select
           value={sortBy}
-          onChange={(e) => setSortBy(e.target.value as any)}
+          onChange={(e) => setSortBy(e.target.value as 'usage' | 'amount' | 'name')}
           className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
         >
           <option value="usage">Sort: Usage %</option>
@@ -486,7 +486,7 @@ export default function BudgetsTab() {
         {/* Filter dropdown */}
         <select
           value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value as any)}
+          onChange={(e) => setFilterStatus(e.target.value as 'all' | 'exceeded' | 'safe')}
           className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
         >
           <option value="all">All ({rows.length})</option>
@@ -817,7 +817,7 @@ export default function BudgetsTab() {
             {totalSpent > totalBudgeted && (
               <div className="flex items-center gap-2 text-red-700">
                 <span>⚠️</span>
-                <span>You're over budget by ₹{(totalSpent - totalBudgeted).toLocaleString('en-IN')} this month</span>
+                <span>You&apos;re over budget by ₹{(totalSpent - totalBudgeted).toLocaleString('en-IN')} this month</span>
               </div>
             )}
             {exceededCount > 0 && (
@@ -835,7 +835,7 @@ export default function BudgetsTab() {
             {totalSpent <= totalBudgeted && exceededCount === 0 && (
               <div className="flex items-center gap-2 text-green-700">
                 <span>✅</span>
-                <span>Great job! You're within budget this month</span>
+                <span>Great job! You&apos;re within budget this month</span>
               </div>
             )}
             <div className="flex items-center gap-2 text-blue-700">
