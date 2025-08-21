@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import AccountManager from './AccountManager'
 import TransactionManager from './TransactionManager'
-import BudgetsTab from './BudgetsTab' // 👈 New tab
+import BudgetsTab from './BudgetsTab'
 
 // Local types
 type Account = { id: string; name: string; balance: number }
@@ -16,6 +16,7 @@ export default function FinanceMain() {
   const [accounts, setAccounts] = useState<Account[]>([])
   const [txForSummary, setTxForSummary] = useState<TxRow[]>([])
   const [balanceVisible, setBalanceVisible] = useState(true)
+  const [loading, setLoading] = useState(true)
 
   // Ensure baseline categories exist (per-user). This is optional and non-blocking.
   const seedCategories = useCallback(async () => {
@@ -38,16 +39,23 @@ export default function FinanceMain() {
   }, [])
 
   const loadSummaryData = useCallback(async () => {
-    // Accounts
-    const { data: accountData } = await supabase.from('accounts').select('id, name, balance')
-    setAccounts((accountData as Account[] | null) || [])
+    setLoading(true)
+    try {
+      // Accounts
+      const { data: accountData } = await supabase.from('accounts').select('id, name, balance')
+      setAccounts((accountData as Account[] | null) || [])
 
-    // Minimal transactions fetch for summary cards (only types we need)
-    const { data: txData } = await supabase
-      .from('transactions')
-      .select('type, amount')
-      .in('type', ['loan_given', 'loan_received'])
-    setTxForSummary((txData as TxRow[] | null) || [])
+      // Minimal transactions fetch for summary cards (only types we need)
+      const { data: txData } = await supabase
+        .from('transactions')
+        .select('type, amount')
+        .in('type', ['loan_given', 'loan_received'])
+      setTxForSummary((txData as TxRow[] | null) || [])
+    } catch (error) {
+      console.error('Error loading summary data:', error)
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => {
@@ -77,73 +85,102 @@ export default function FinanceMain() {
     [totalBalance, moneyLent, moneyOwed]
   )
 
-  const tabs: { id: 'accounts' | 'transactions' | 'budgets'; label: string; count: number | null }[] = [
-    { id: 'accounts', label: 'Accounts', count: accounts.length },
-    { id: 'transactions', label: 'Transactions', count: null },
-    { id: 'budgets', label: 'Budgets', count: null }, // 👈 replaced Loans with Budgets
+  const tabs: { id: 'accounts' | 'transactions' | 'budgets'; label: string; icon: string; count: number | null }[] = [
+    { id: 'accounts', label: 'Accounts', icon: '🏦', count: accounts.length },
+    { id: 'transactions', label: 'Transactions', icon: '💳', count: null },
+    { id: 'budgets', label: 'Budgets', icon: '📊', count: null },
   ]
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header with Summary */}
+      {/* Mobile-Optimized Header */}
       <div className="border-b bg-white shadow-sm">
-        <div className="mx-auto max-w-6xl p-6">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <h1 className="text-2xl font-bold">Finance Manager</h1>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setBalanceVisible((s) => !s)}
-                className="text-sm text-gray-600 hover:text-gray-800"
-              >
-                {balanceVisible ? '👁️ Hide' : '👁️ Show'} Balances
-              </button>
+        <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6 sm:py-6">
+          {/* Title Section */}
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">
+                💼 Finance Manager
+              </h1>
+              <p className="text-sm text-gray-600 sm:hidden">
+                Manage your accounts, transactions & budgets
+              </p>
             </div>
+            
+            {/* Balance Toggle - Mobile Optimized */}
+            <button
+              onClick={() => setBalanceVisible((s) => !s)}
+              className="flex items-center justify-center gap-2 rounded-lg bg-gray-100 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 sm:px-3 sm:py-2"
+            >
+              <span>{balanceVisible ? '🙈' : '👁️'}</span>
+              <span className="sm:hidden">{balanceVisible ? 'Hide Balances' : 'Show Balances'}</span>
+              <span className="hidden sm:inline">{balanceVisible ? 'Hide' : 'Show'}</span>
+            </button>
           </div>
 
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-            <SummaryCard
-              label="Total Balance"
-              color="blue"
-              value={balanceVisible ? `₹${totalBalance.toLocaleString('en-IN')}` : '****'}
-            />
-            <SummaryCard
-              label="Money Lent"
-              color="orange"
-              value={balanceVisible ? `₹${moneyLent.toLocaleString('en-IN')}` : '****'}
-            />
-            <SummaryCard
-              label="Money Owed"
-              color="red"
-              value={balanceVisible ? `₹${moneyOwed.toLocaleString('en-IN')}` : '****'}
-            />
-            <SummaryCard
-              label="Net Worth"
-              color="green"
-              value={balanceVisible ? `₹${totalAssets.toLocaleString('en-IN')}` : '****'}
-            />
-          </div>
+          {/* Summary Cards - Mobile First */}
+          {loading ? (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="h-20 animate-pulse rounded-lg border bg-gray-100 sm:h-24" />
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
+              <SummaryCard
+                label="Total Balance"
+                color="blue"
+                icon="💰"
+                value={balanceVisible ? `₹${totalBalance.toLocaleString('en-IN')}` : '••••'}
+              />
+              <SummaryCard
+                label="Money Lent"
+                color="orange"
+                icon="📤"
+                value={balanceVisible ? `₹${moneyLent.toLocaleString('en-IN')}` : '••••'}
+              />
+              <SummaryCard
+                label="Money Owed"
+                color="red"
+                icon="📥"
+                value={balanceVisible ? `₹${moneyOwed.toLocaleString('en-IN')}` : '••••'}
+              />
+              <SummaryCard
+                label="Net Worth"
+                color="green"
+                icon="📈"
+                value={balanceVisible ? `₹${totalAssets.toLocaleString('en-IN')}` : '••••'}
+              />
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="border-b bg-white">
+      {/* Mobile-Friendly Navigation Tabs */}
+      <div className="sticky top-0 z-10 border-b bg-white shadow-sm">
         <div className="mx-auto max-w-6xl">
-          <div className="flex">
+          <div className="flex overflow-x-auto scrollbar-hide">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-6 py-4 text-sm font-medium ${
+                className={`flex min-w-0 flex-1 flex-col items-center gap-1 px-3 py-4 text-xs font-medium transition-colors sm:flex-row sm:gap-2 sm:px-6 sm:text-sm ${
                   activeTab === tab.id
                     ? 'border-b-2 border-blue-500 bg-blue-50 text-blue-600'
                     : 'border-b-2 border-transparent text-gray-500 hover:bg-gray-50 hover:text-gray-700'
                 }`}
               >
-                {tab.label}
+                <span className="text-base sm:text-sm">{tab.icon}</span>
+                <span className="truncate">{tab.label}</span>
                 {tab.count !== null && (
-                  <span className="ml-2 rounded-full bg-gray-200 px-2 py-1 text-xs text-gray-600">
+                  <span className="hidden rounded-full bg-gray-200 px-2 py-0.5 text-xs text-gray-600 sm:inline">
                     {tab.count}
+                  </span>
+                )}
+                {/* Mobile count indicator */}
+                {tab.count !== null && tab.count > 0 && (
+                  <span className="absolute -top-1 right-2 flex h-4 w-4 items-center justify-center rounded-full bg-blue-500 text-[10px] text-white sm:hidden">
+                    {tab.count > 99 ? '99+' : tab.count}
                   </span>
                 )}
               </button>
@@ -152,14 +189,19 @@ export default function FinanceMain() {
         </div>
       </div>
 
-      {/* Content */}
-      <div className="mx-auto max-w-6xl p-6">
-        <div className="rounded-lg border bg-white p-6 shadow-sm">
-          {activeTab === 'accounts' && <AccountManager onAccountChange={loadSummaryData} />}
-          {activeTab === 'transactions' && <TransactionManager />}
-          {activeTab === 'budgets' && <BudgetsTab />}
+      {/* Content Area - Mobile Optimized */}
+      <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6 sm:py-6">
+        <div className="overflow-hidden rounded-lg border bg-white shadow-sm">
+          <div className="p-4 sm:p-6">
+            {activeTab === 'accounts' && <AccountManager onAccountChange={loadSummaryData} />}
+            {activeTab === 'transactions' && <TransactionManager />}
+            {activeTab === 'budgets' && <BudgetsTab />}
+          </div>
         </div>
       </div>
+
+      {/* Mobile Bottom Safe Area */}
+      <div className="h-safe-area-inset-bottom sm:hidden" />
     </div>
   )
 }
@@ -167,22 +209,56 @@ export default function FinanceMain() {
 function SummaryCard({
   label,
   value,
-  color
+  color,
+  icon
 }: {
   label: string
   value: string
   color: 'blue' | 'orange' | 'red' | 'green'
+  icon: string
 }) {
-  const base = {
-    blue: 'bg-blue-50 border-blue-200 text-blue-700',
-    orange: 'bg-orange-50 border-orange-200 text-orange-700',
-    red: 'bg-red-50 border-red-200 text-red-700',
-    green: 'bg-green-50 border-green-200 text-green-700'
+  const colorConfig = {
+    blue: {
+      bg: 'bg-blue-50',
+      border: 'border-blue-200',
+      text: 'text-blue-700',
+      accent: 'text-blue-600'
+    },
+    orange: {
+      bg: 'bg-orange-50',
+      border: 'border-orange-200', 
+      text: 'text-orange-700',
+      accent: 'text-orange-600'
+    },
+    red: {
+      bg: 'bg-red-50',
+      border: 'border-red-200',
+      text: 'text-red-700',
+      accent: 'text-red-600'
+    },
+    green: {
+      bg: 'bg-green-50',
+      border: 'border-green-200',
+      text: 'text-green-700',
+      accent: 'text-green-600'
+    }
   }[color]
+
   return (
-    <div className={`rounded border p-4 ${base}`}>
-      <p className="text-sm opacity-90">{label}</p>
-      <p className="text-xl font-bold">{value}</p>
+    <div className={`rounded-lg border p-3 shadow-sm transition-all hover:shadow-md sm:p-4 ${colorConfig.bg} ${colorConfig.border}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className={`text-xs font-medium opacity-90 sm:text-sm ${colorConfig.text}`}>
+            {label}
+          </p>
+          <p className={`mt-1 truncate text-sm font-bold sm:text-xl ${colorConfig.accent}`}>
+            {value}
+          </p>
+        </div>
+        <div className={`text-lg opacity-80 sm:text-xl ${colorConfig.accent}`}>
+          {icon}
+        </div>
+      </div>
     </div>
   )
 }

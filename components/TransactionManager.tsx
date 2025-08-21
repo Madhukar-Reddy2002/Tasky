@@ -4,12 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, PieChart, Pie, Cell
+  BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area
 } from 'recharts';
 
 // Types
 type TxType = 'income' | 'expense' | 'transfer' | 'loan_given' | 'loan_received';
-type TabKey = 'transactions' | 'history' | 'summary';
+type TabKey = 'transactions' | 'history' | 'summary' | 'insights';
 
 type Transaction = {
   id: string;
@@ -20,9 +20,8 @@ type Transaction = {
   type: TxType;
   amount: number;
   description: string;
-  date: string; // ISO (YYYY-MM-DD)
+  date: string;
   created_at: string;
-  // Joined
   category?: { name: string; icon?: string | null };
   account?: { name: string };
   to_account?: { name: string };
@@ -31,7 +30,6 @@ type Transaction = {
 type Account = { id: string; name: string; balance: number };
 type Category = { id: string; name: string; icon?: string | null };
 
-// Payload for inserts
 type InsertTx = {
   user_id: string;
   account_id: string | null;
@@ -45,35 +43,37 @@ type InsertTx = {
 
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#8dd1e1', '#d084d0'];
 
-// For Recharts Pie label typing
-interface PieLabelProps {
-  name: string;
-  percent?: number;
-}
-
 export default function TransactionManager() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // tabs
+  // UI State
   const [activeTab, setActiveTab] = useState<TabKey>('transactions');
-
-  // add form
   const [showAddForm, setShowAddForm] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [showBalances, setShowBalances] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<'date' | 'amount'>('date');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  // filters (transactions tab)
+  // Filters
   const [selectedAccount, setSelectedAccount] = useState<'all' | string>('all');
   const [selectedCategoryId, setSelectedCategoryId] = useState<'all' | string>('all');
   const [selectedType, setSelectedType] = useState<'all' | TxType>('all');
+  const [dateRange, setDateRange] = useState<{ start: string; end: string }>({
+    start: '',
+    end: ''
+  });
 
-  // history tab
+  // History tab
   const [selectedHistoryAccount, setSelectedHistoryAccount] = useState<string>('');
 
-  // summary tab
+  // Summary tab
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
 
-  // add txn form state
+  // Form state
   const [newTx, setNewTx] = useState<{
     type: TxType;
     amount: string;
@@ -93,38 +93,43 @@ export default function TransactionManager() {
   }));
 
   const loadData = useCallback(async () => {
-    const { data: txData } = await supabase
-      .from('transactions')
-      .select(
-        `*,
-         category:categories(name, icon),
-         account:accounts!transactions_account_id_fkey(name),
-         to_account:accounts!transactions_to_account_id_fkey(name)`
-      )
-      .order('date', { ascending: false })
-      .order('created_at', { ascending: false });
+    setLoading(true);
+    try {
+      const { data: txData } = await supabase
+        .from('transactions')
+        .select(
+          `*,
+           category:categories(name, icon),
+           account:accounts!transactions_account_id_fkey(name),
+           to_account:accounts!transactions_to_account_id_fkey(name)`
+        )
+        .order('date', { ascending: false })
+        .order('created_at', { ascending: false });
 
-    setTransactions((txData as Transaction[] | null) || []);
+      setTransactions((txData as Transaction[] | null) || []);
 
-    const { data: accData } = await supabase
-      .from('accounts')
-      .select('id, name, balance')
-      .order('name');
-    const accs = (accData as Account[] | null) || [];
-    setAccounts(accs);
+      const { data: accData } = await supabase
+        .from('accounts')
+        .select('id, name, balance')
+        .order('name');
+      const accs = (accData as Account[] | null) || [];
+      setAccounts(accs);
 
-    const { data: catData } = await supabase
-      .from('categories')
-      .select('id, name, icon')
-      .order('name');
-    setCategories((catData as Category[] | null) || []);
+      const { data: catData } = await supabase
+        .from('categories')
+        .select('id, name, icon')
+        .order('name');
+      setCategories((catData as Category[] | null) || []);
 
-    // defaults
-    if (accs.length && !newTx.account_id) {
-      setNewTx((p) => ({ ...p, account_id: accs[0].id }));
-    }
-    if (accs.length && !selectedHistoryAccount) {
-      setSelectedHistoryAccount(accs[0].id);
+      // Set defaults
+      if (accs.length && !newTx.account_id) {
+        setNewTx((p) => ({ ...p, account_id: accs[0].id }));
+      }
+      if (accs.length && !selectedHistoryAccount) {
+        setSelectedHistoryAccount(accs[0].id);
+      }
+    } finally {
+      setLoading(false);
     }
   }, [newTx.account_id, selectedHistoryAccount]);
 
@@ -132,10 +137,11 @@ export default function TransactionManager() {
     void loadData();
   }, [loadData]);
 
-  // ---------- Filters for Transactions tab ----------
+  // Enhanced filtered transactions with search and sorting
   const filteredTransactions = useMemo(() => {
     let list = transactions;
 
+    // Apply filters
     if (selectedAccount !== 'all') {
       list = list.filter(
         (t) => t.account_id === selectedAccount || t.to_account_id === selectedAccount
@@ -147,10 +153,39 @@ export default function TransactionManager() {
     if (selectedType !== 'all') {
       list = list.filter((t) => t.type === selectedType);
     }
-    return list;
-  }, [transactions, selectedAccount, selectedCategoryId, selectedType]);
+    if (dateRange.start) {
+      list = list.filter((t) => t.date >= dateRange.start);
+    }
+    if (dateRange.end) {
+      list = list.filter((t) => t.date <= dateRange.end);
+    }
 
-  // ---------- History tab data (running balance computed in-memory) ----------
+    // Apply search
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      list = list.filter((t) => 
+        t.description.toLowerCase().includes(query) ||
+        t.category?.name?.toLowerCase().includes(query) ||
+        t.account?.name?.toLowerCase().includes(query) ||
+        t.amount.toString().includes(query)
+      );
+    }
+
+    // Apply sorting
+    list.sort((a, b) => {
+      let compareValue = 0;
+      if (sortBy === 'date') {
+        compareValue = new Date(a.date).getTime() - new Date(b.date).getTime();
+      } else {
+        compareValue = a.amount - b.amount;
+      }
+      return sortOrder === 'asc' ? compareValue : -compareValue;
+    });
+
+    return list;
+  }, [transactions, selectedAccount, selectedCategoryId, selectedType, searchQuery, sortBy, sortOrder, dateRange]);
+
+  // History calculations
   const historyRows = useMemo(() => {
     if (!selectedHistoryAccount) {
       return [] as Array<Transaction & { balance_after: number; change: number }>;
@@ -171,7 +206,6 @@ export default function TransactionManager() {
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       });
 
-    // compute total delta across filtered rows from perspective of selectedHistoryAccount
     const totalDelta = txAsc.reduce((sum, t) => {
       let delta = 0;
       if (t.type === 'income' || t.type === 'loan_received') {
@@ -187,7 +221,6 @@ export default function TransactionManager() {
       return sum + delta;
     }, 0);
 
-    // back-calc starting balance so that final balance equals current account balance
     let running = acc.balance - totalDelta;
 
     const out: Array<Transaction & { balance_after: number; change: number }> = [];
@@ -204,16 +237,14 @@ export default function TransactionManager() {
       running += change;
       out.push({ ...t, balance_after: running, change });
     }
-    // newest first for list; chart will use ascending order
     return out.reverse();
   }, [transactions, selectedHistoryAccount, accounts]);
 
-  // ---------- Summary tab aggregates ----------
+  // Enhanced monthly summary
   const monthly = useMemo(() => {
-    const month = selectedMonth; // 'YYYY-MM'
+    const month = selectedMonth;
     const monthTx = transactions.filter((t) => t.date.startsWith(month));
 
-    // category spending: expenses only
     const categorySpending = monthTx
       .filter((t) => t.type === 'expense' && t.category?.name)
       .reduce((acc, t) => {
@@ -222,7 +253,6 @@ export default function TransactionManager() {
         return acc;
       }, {} as Record<string, number>);
 
-    // Add high-level totals
     const totalIncome = monthTx
       .filter((t) => t.type === 'income' || t.type === 'loan_received' || (t.type === 'transfer' && t.to_account_id))
       .reduce((s, t) => s + (t.type === 'transfer' ? (t.to_account_id ? t.amount : 0) : t.amount), 0);
@@ -233,7 +263,6 @@ export default function TransactionManager() {
 
     const net = totalIncome - totalExpenses;
 
-    // account activity bars (income vs expenses from perspective of each account)
     const accountBreakdown = accounts.map((acc) => {
       const related = monthTx.filter((t) => t.account_id === acc.id || t.to_account_id === acc.id);
       const income =
@@ -257,10 +286,83 @@ export default function TransactionManager() {
 
     const pieData = Object.entries(categorySpending).map(([name, value]) => ({ name, value }));
 
-    return { categorySpending, accountBreakdown, pieData, totalIncome, totalExpenses, net };
+    // Daily spending trend
+    const dailySpending = monthTx
+      .filter((t) => t.type === 'expense')
+      .reduce((acc, t) => {
+        const day = t.date;
+        acc[day] = (acc[day] || 0) + t.amount;
+        return acc;
+      }, {} as Record<string, number>);
+
+    const dailyTrend = Object.entries(dailySpending)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, amount]) => ({ date, amount }));
+
+    return { 
+      categorySpending, 
+      accountBreakdown, 
+      pieData, 
+      totalIncome, 
+      totalExpenses, 
+      net,
+      dailyTrend,
+      transactionCount: monthTx.length
+    };
   }, [transactions, accounts, selectedMonth]);
 
-  // ---------- Actions ----------
+  // New insights calculations
+  const insights = useMemo(() => {
+    const last30Days = transactions.filter((t) => {
+      const txDate = new Date(t.date);
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      return txDate >= thirtyDaysAgo;
+    });
+
+    const prev30Days = transactions.filter((t) => {
+      const txDate = new Date(t.date);
+      const sixtyDaysAgo = new Date();
+      sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      return txDate >= sixtyDaysAgo && txDate < thirtyDaysAgo;
+    });
+
+    const currentSpending = last30Days
+      .filter((t) => t.type === 'expense')
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const prevSpending = prev30Days
+      .filter((t) => t.type === 'expense')
+      .reduce((sum, t) => sum + t.amount, 0);
+
+    const spendingChange = prevSpending > 0 ? ((currentSpending - prevSpending) / prevSpending) * 100 : 0;
+
+    const topCategory = Object.entries(
+      last30Days
+        .filter((t) => t.type === 'expense' && t.category?.name)
+        .reduce((acc, t) => {
+          const key = t.category!.name!;
+          acc[key] = (acc[key] || 0) + t.amount;
+          return acc;
+        }, {} as Record<string, number>)
+    ).sort(([, a], [, b]) => b - a)[0];
+
+    const avgDailySpending = currentSpending / 30;
+    const totalNetWorth = accounts.reduce((sum, acc) => sum + acc.balance, 0);
+
+    return {
+      currentSpending,
+      spendingChange,
+      topCategory: topCategory ? { name: topCategory[0], amount: topCategory[1] } : null,
+      avgDailySpending,
+      totalNetWorth,
+      last30DaysCount: last30Days.length
+    };
+  }, [transactions, accounts]);
+
+  // Actions
   async function addTransaction(e: React.FormEvent) {
     e.preventDefault();
     const { data: userData } = await supabase.auth.getUser();
@@ -275,7 +377,6 @@ export default function TransactionManager() {
       date: newTx.date,
       account_id: newTx.account_id || null,
       to_account_id: newTx.type === 'transfer' ? newTx.to_account_id : null,
-      // category only for EXPENSE; income/transfer/loan_* do not need a category
       category_id: newTx.type === 'expense' ? newTx.category_id : null,
     };
 
@@ -290,232 +391,458 @@ export default function TransactionManager() {
       amount: '',
       description: '',
       to_account_id: '',
-      // keep last expense category handy; harmless for non-expense
       category_id: p.category_id,
     }));
     setShowAddForm(false);
     await loadData();
   }
 
-  // ---------- Render helpers ----------
+  async function deleteTransaction(id: string) {
+    if (!confirm('Are you sure you want to delete this transaction?')) return;
+    
+    const { error } = await supabase.from('transactions').delete().eq('id', id);
+    if (error) {
+      alert('Error deleting transaction: ' + error.message);
+      return;
+    }
+    await loadData();
+  }
+
+  function clearFilters() {
+    setSelectedAccount('all');
+    setSelectedCategoryId('all');
+    setSelectedType('all');
+    setSearchQuery('');
+    setDateRange({ start: '', end: '' });
+  }
+
+  function exportTransactions() {
+    const csv = [
+      ['Date', 'Description', 'Category', 'Account', 'Type', 'Amount'].join(','),
+      ...filteredTransactions.map(t => [
+        t.date,
+        `"${t.description}"`,
+        t.category?.name || '',
+        t.account?.name || '',
+        t.type,
+        t.amount
+      ].join(','))
+    ].join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `transactions-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+  }
+
+  // Mobile-optimized transaction card
+  const TransactionCard = ({ transaction }: { transaction: Transaction }) => (
+    <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <span className="text-2xl flex-shrink-0">
+            {transaction.category?.icon ??
+              (transaction.type === 'transfer' ? '↔️' : 
+               transaction.type === 'income' ? '💰' : 
+               transaction.type === 'loan_given' ? '📤' : 
+               transaction.type === 'loan_received' ? '📥' : '💸')}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="font-medium text-gray-900 truncate">{transaction.description}</p>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-xs text-gray-500">
+              <span className="truncate">{transaction.category?.name || transaction.type.replace('_', ' ')}</span>
+              <span className="hidden sm:inline">•</span>
+              <span>{new Date(transaction.date).toLocaleDateString()}</span>
+              <span className="hidden sm:inline">•</span>
+              <span className="truncate">{transaction.account?.name}</span>
+              {transaction.to_account && (
+                <>
+                  <span>→ {transaction.to_account.name}</span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="text-right">
+            <p className={`font-bold ${
+              transaction.type === 'income' || transaction.type === 'loan_received' || 
+              (transaction.type === 'transfer' && transaction.to_account_id === selectedAccount)
+                ? 'text-green-600'
+                : 'text-red-600'
+            }`}>
+              {transaction.type === 'income' || transaction.type === 'loan_received' || 
+               (transaction.type === 'transfer' && transaction.to_account_id === selectedAccount)
+                ? '+'
+                : '-'}
+              ₹{Number(transaction.amount).toLocaleString('en-IN')}
+            </p>
+          </div>
+          <button
+            onClick={() => deleteTransaction(transaction.id)}
+            className="p-1 text-gray-400 hover:text-red-500 transition-colors"
+          >
+            🗑️
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Enhanced mobile-friendly form
+  const AddTransactionForm = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50 p-4">
+      <form 
+        onSubmit={addTransaction} 
+        className="bg-white rounded-t-lg sm:rounded-lg w-full max-w-lg max-h-[90vh] overflow-y-auto"
+      >
+        <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
+          <h3 className="text-lg font-semibold">Add Transaction</h3>
+          <button
+            type="button"
+            onClick={() => setShowAddForm(false)}
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+        
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
+            <select
+              value={newTx.type}
+              onChange={(e) => setNewTx({ ...newTx, type: e.target.value as TxType })}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="expense">💸 Expense</option>
+              <option value="income">💰 Income</option>
+              <option value="transfer">↔️ Transfer</option>
+              <option value="loan_given">📤 Loan Given</option>
+              <option value="loan_received">📥 Loan Received</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Amount</label>
+            <input
+              type="number"
+              placeholder="0.00"
+              value={newTx.amount}
+              onChange={(e) => setNewTx({ ...newTx, amount: e.target.value })}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              step="0.01"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+            <input
+              type="text"
+              placeholder="Enter description"
+              value={newTx.description}
+              onChange={(e) => setNewTx({ ...newTx, description: e.target.value })}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
+            <input
+              type="date"
+              value={newTx.date}
+              onChange={(e) => setNewTx({ ...newTx, date: e.target.value })}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {newTx.type === 'transfer' ? 'From Account' : 'Account'}
+            </label>
+            <select
+              value={newTx.account_id}
+              onChange={(e) => setNewTx({ ...newTx, account_id: e.target.value })}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              required
+            >
+              <option value="">Select account</option>
+              {accounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name} (₹{acc.balance.toLocaleString('en-IN')})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {newTx.type === 'transfer' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">To Account</label>
+              <select
+                value={newTx.to_account_id}
+                onChange={(e) => setNewTx({ ...newTx, to_account_id: e.target.value })}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required
+              >
+                <option value="">Select account</option>
+                {accounts
+                  .filter((acc) => acc.id !== newTx.account_id)
+                  .map((acc) => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
+
+          {newTx.type === 'expense' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+              <select
+                value={newTx.category_id}
+                onChange={(e) => setNewTx({ ...newTx, category_id: e.target.value })}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required
+              >
+                <option value="">Select category</option>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.icon ?? '🏷️'} {cat.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-4">
+            <button
+              type="button"
+              onClick={() => setShowAddForm(false)}
+              className="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button 
+              type="submit" 
+              className="flex-1 rounded-lg bg-blue-600 px-4 py-2.5 font-medium text-white hover:bg-blue-700 transition-colors"
+            >
+              Add Transaction
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  );
+
+  // Enhanced filter panel
+  const FilterPanel = () => (
+    <div className="bg-white border-t border-gray-200 p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-medium text-gray-900">Filters</h3>
+        <button
+          onClick={clearFilters}
+          className="text-sm text-blue-600 hover:text-blue-700"
+        >
+          Clear All
+        </button>
+      </div>
+      
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <select
+          value={selectedAccount}
+          onChange={(e) => setSelectedAccount(e.target.value)}
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        >
+          <option value="all">All Accounts</option>
+          {accounts.map((acc) => (
+            <option key={acc.id} value={acc.id}>
+              {acc.name}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={selectedCategoryId}
+          onChange={(e) => setSelectedCategoryId(e.target.value)}
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        >
+          <option value="all">All Categories</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={selectedType}
+          onChange={(e) => setSelectedType(e.target.value as 'all' | TxType)}
+          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        >
+          <option value="all">All Types</option>
+          <option value="income">Income</option>
+          <option value="expense">Expense</option>
+          <option value="transfer">Transfer</option>
+          <option value="loan_given">Loan Given</option>
+          <option value="loan_received">Loan Received</option>
+        </select>
+
+        <div className="flex gap-2">
+          <input
+            type="date"
+            placeholder="From date"
+            value={dateRange.start}
+            onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+            className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+          <input
+            type="date"
+            placeholder="To date"
+            value={dateRange.end}
+            onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+            className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        </div>
+      </div>
+    </div>
+  );
+
+  // Render functions for each tab
   const renderTransactionsTab = () => (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-xl font-semibold">Transactions ({filteredTransactions.length})</h2>
-        <div className="flex flex-wrap gap-2">
-          <select
-            value={selectedAccount}
-            onChange={(e) => setSelectedAccount(e.target.value)}
-            className="rounded border px-3 py-2"
-          >
-            <option value="all">All Accounts</option>
-            {accounts.map((acc) => (
-              <option key={acc.id} value={acc.id}>
-                {acc.name}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={selectedCategoryId}
-            onChange={(e) => setSelectedCategoryId(e.target.value)}
-            className="rounded border px-3 py-2"
-          >
-            <option value="all">All Categories</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={selectedType}
-            onChange={(e) => setSelectedType(e.target.value as 'all' | TxType)}
-            className="rounded border px-3 py-2"
-          >
-            <option value="all">All Types</option>
-            <option value="income">income</option>
-            <option value="expense">expense</option>
-            <option value="transfer">transfer</option>
-            <option value="loan_given">loan_given</option>
-            <option value="loan_received">loan_received</option>
-          </select>
-
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <h2 className="text-xl font-semibold text-gray-900">Transactions</h2>
+          <span className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-sm font-medium">
+            {filteredTransactions.length}
+          </span>
+        </div>
+        
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => setShowAddForm((s) => !s)}
-            className="rounded bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+            onClick={() => setShowFilters(!showFilters)}
+            className={`p-2.5 rounded-lg border transition-colors ${
+              showFilters ? 'bg-blue-50 border-blue-200 text-blue-600' : 'border-gray-300 text-gray-600 hover:bg-gray-50'
+            }`}
           >
-            {showAddForm ? 'Cancel' : 'Add Transaction'}
+            🔍
+          </button>
+          
+          <button
+            onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+            className="p-2.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            ↕️
+          </button>
+          
+          <button
+            onClick={exportTransactions}
+            className="p-2.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            💾
           </button>
         </div>
       </div>
 
-      {/* Quick balances */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        {accounts.map((account) => (
-          <div key={account.id} className="rounded border border-blue-200 bg-blue-50 p-4">
-            <h3 className="font-semibold text-blue-800">{account.name}</h3>
-            <p className="text-2xl font-bold text-blue-600">
-              ₹{account.balance.toLocaleString('en-IN')}
-            </p>
-          </div>
-        ))}
+      {/* Search Bar */}
+      <div className="relative">
+        <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400">🔍</span>
+        <input
+          type="text"
+          placeholder="Search transactions..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full pl-10 pr-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        />
       </div>
 
-      {showAddForm && (
-        <form onSubmit={addTransaction} className="grid gap-3 rounded border bg-gray-50 p-4 md:grid-cols-5">
-          <select
-            value={newTx.type}
-            onChange={(e) => setNewTx({ ...newTx, type: e.target.value as TxType })}
-            className="w-full rounded border px-3 py-2"
-          >
-            <option value="expense">Expense</option>
-            <option value="income">Income</option>
-            <option value="transfer">Transfer</option>
-            <option value="loan_given">Loan Given</option>
-            <option value="loan_received">Loan Received</option>
-          </select>
+      {/* Filter Panel */}
+      {showFilters && <FilterPanel />}
 
-          <input
-            type="number"
-            placeholder="Amount"
-            value={newTx.amount}
-            onChange={(e) => setNewTx({ ...newTx, amount: e.target.value })}
-            className="w-full rounded border px-3 py-2"
-            step="0.01"
-            required
-          />
-
-          <input
-            type="text"
-            placeholder="Description"
-            value={newTx.description}
-            onChange={(e) => setNewTx({ ...newTx, description: e.target.value })}
-            className="w-full rounded border px-3 py-2"
-            required
-          />
-
-          <input
-            type="date"
-            value={newTx.date}
-            onChange={(e) => setNewTx({ ...newTx, date: e.target.value })}
-            className="w-full rounded border px-3 py-2"
-          />
-
-          <select
-            value={newTx.account_id}
-            onChange={(e) => setNewTx({ ...newTx, account_id: e.target.value })}
-            className="w-full rounded border px-3 py-2"
-            required
-          >
-            <option value="">From account</option>
-            {accounts.map((acc) => (
-              <option key={acc.id} value={acc.id}>
-                {acc.name} (₹{acc.balance.toLocaleString('en-IN')})
-              </option>
-            ))}
-          </select>
-
-          {newTx.type === 'transfer' && (
-            <select
-              value={newTx.to_account_id}
-              onChange={(e) => setNewTx({ ...newTx, to_account_id: e.target.value })}
-              className="w-full rounded border px-3 py-2"
-              required
-            >
-              <option value="">To account</option>
-              {accounts
-                .filter((acc) => acc.id !== newTx.account_id)
-                .map((acc) => (
-                  <option key={acc.id} value={acc.id}>
-                    {acc.name}
-                  </option>
-                ))}
-            </select>
-          )}
-
-          {/* Category only when Expense */}
-          {newTx.type === 'expense' && (
-            <select
-              value={newTx.category_id}
-              onChange={(e) => setNewTx({ ...newTx, category_id: e.target.value })}
-              className="w-full rounded border px-3 py-2"
-              required
-            >
-              <option value="">Select category</option>
-              {categories.map((cat) => (
-                <option key={cat.id} value={cat.id}>
-                  {cat.icon ?? '🏷️'} {cat.name}
-                </option>
-              ))}
-            </select>
-          )}
-
-          <div className="md:col-span-5">
-            <button type="submit" className="rounded bg-green-600 px-4 py-2 font-medium text-white hover:bg-green-700">
-              Add
-            </button>
-          </div>
-        </form>
-      )}
-
-      <div className="space-y-2">
-        {filteredTransactions.map((t) => (
-          <div key={t.id} className="rounded border bg-white p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">
-                  {t.category?.icon ??
-                    (t.type === 'transfer' ? '↔️' : t.type === 'income' ? '💰' : t.type === 'loan_given' ? '📤' : t.type === 'loan_received' ? '📥' : '💸')}
-                </span>
+      {/* Quick Balance Cards */}
+      {showBalances && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {accounts.map((account) => (
+            <div key={account.id} className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-100">
+              <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-semibold">{t.description}</p>
-                  <p className="text-sm text-gray-600">
-                    {(t.category?.name || t.type.replace('_', ' '))} • {new Date(t.date).toLocaleDateString()} • {t.account?.name}
-                    {t.to_account && ` → ${t.to_account.name}`}
+                  <h3 className="font-semibold text-blue-900 truncate">{account.name}</h3>
+                  <p className="text-2xl font-bold text-blue-700">
+                    ₹{account.balance.toLocaleString('en-IN')}
                   </p>
                 </div>
-              </div>
-              <div className="text-right">
-                <p
-                  className={`font-bold ${
-                    t.type === 'income' || t.type === 'loan_received' || (t.type === 'transfer' && t.to_account_id === selectedAccount)
-                      ? 'text-green-600'
-                      : 'text-red-600'
-                  }`}
+                <button
+                  onClick={() => setShowBalances(false)}
+                  className="p-1 text-blue-400 hover:text-blue-600 lg:hidden"
                 >
-                  {t.type === 'income' || t.type === 'loan_received' || (t.type === 'transfer' && t.to_account_id === selectedAccount)
-                    ? '+'
-                    : '-'}
-                  ₹{Number(t.amount).toLocaleString('en-IN')}
-                </p>
+                  👁️
+                </button>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
-      {filteredTransactions.length === 0 && (
-        <div className="py-8 text-center text-gray-500">
-          No transactions yet. Add your first transaction!
+          ))}
         </div>
       )}
+
+      {!showBalances && (
+        <button
+          onClick={() => setShowBalances(true)}
+          className="w-full py-2 text-sm text-blue-600 hover:text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50 transition-colors"
+        >
+          👁️ Show Account Balances
+        </button>
+      )}
+
+      {/* Transactions List */}
+      <div className="space-y-3">
+        {loading ? (
+          <div className="text-center py-8">
+            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <p className="mt-2 text-gray-500">Loading transactions...</p>
+          </div>
+        ) : filteredTransactions.length > 0 ? (
+          filteredTransactions.map((transaction) => (
+            <TransactionCard key={transaction.id} transaction={transaction} />
+          ))
+        ) : (
+          <div className="text-center py-12">
+            <div className="text-6xl mb-4">📊</div>
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No transactions found</h3>
+            <p className="text-gray-500 mb-4">
+              {searchQuery || selectedAccount !== 'all' || selectedCategoryId !== 'all' || selectedType !== 'all' 
+                ? 'Try adjusting your filters or search terms'
+                : 'Get started by adding your first transaction!'}
+            </p>
+            {(searchQuery || selectedAccount !== 'all' || selectedCategoryId !== 'all' || selectedType !== 'all') && (
+              <button
+                onClick={clearFilters}
+                className="text-blue-600 hover:text-blue-700 font-medium"
+              >
+                Clear all filters
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 
-  // ---------- History tab ----------
   const renderHistoryTab = () => {
-    // build rows with running balance (newest first already)
-    const chartAsc = historyRows.slice().reverse(); // ascending for line chart
+    const chartAsc = historyRows.slice().reverse();
 
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold">Transaction History</h2>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <h2 className="text-xl font-semibold text-gray-900">Transaction History</h2>
           <select
             value={selectedHistoryAccount}
             onChange={(e) => setSelectedHistoryAccount(e.target.value)}
-            className="rounded border px-3 py-2"
+            className="rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
             {accounts.map((acc) => (
               <option key={acc.id} value={acc.id}>
@@ -525,41 +852,63 @@ export default function TransactionManager() {
           </select>
         </div>
 
-        {selectedHistoryAccount && (
+        {selectedHistoryAccount && chartAsc.length > 0 && (
           <>
             {/* Balance Chart */}
-            <div className="rounded border bg-white p-6">
-              <h3 className="mb-4 text-lg font-semibold">Balance History</h3>
-              <div className="h-64">
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Balance History</h3>
+              <div className="h-64 sm:h-80">
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartAsc}>
-                    <CartesianGrid strokeDasharray="3 3" />
+                  <AreaChart data={chartAsc}>
+                    <defs>
+                      <linearGradient id="balanceGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                     <XAxis
                       dataKey="date"
                       tickFormatter={(v: string) => new Date(v).toLocaleDateString()}
+                      tick={{ fontSize: 12 }}
                     />
-                    <YAxis tickFormatter={(v: number) => `₹${v.toLocaleString('en-IN')}`} />
+                    <YAxis 
+                      tickFormatter={(v: number) => `₹${(v/1000).toFixed(0)}k`}
+                      tick={{ fontSize: 12 }}
+                    />
                     <Tooltip
                       formatter={(val: number | string) => [
                         `₹${Number(val).toLocaleString('en-IN')}`,
                         'Balance',
                       ]}
                       labelFormatter={(v: string) => new Date(v).toLocaleDateString()}
+                      contentStyle={{
+                        backgroundColor: 'white',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '8px',
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                      }}
                     />
-                    <Line type="monotone" dataKey="balance_after" stroke="#4f46e5" strokeWidth={2} dot={{ r: 3 }} />
-                  </LineChart>
+                    <Area 
+                      type="monotone" 
+                      dataKey="balance_after" 
+                      stroke="#4f46e5" 
+                      strokeWidth={3}
+                      fill="url(#balanceGradient)" 
+                    />
+                  </AreaChart>
                 </ResponsiveContainer>
               </div>
             </div>
 
-            {/* Transaction list */}
+            {/* Transaction List */}
             <div className="space-y-3">
-              <h3 className="text-lg font-semibold">Transaction Details</h3>
-              {historyRows.map((t) => (
-                <div key={t.id} className="rounded border bg-white p-4">
+              <h3 className="text-lg font-semibold text-gray-900">Recent Transactions</h3>
+              {historyRows.slice(0, 10).map((t) => (
+                <div key={t.id} className="bg-white rounded-lg border border-gray-200 p-4">
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <span className="text-2xl">
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <span className="text-2xl flex-shrink-0">
                         {t.category?.icon ??
                           (t.type === 'transfer'
                             ? '↔️'
@@ -571,13 +920,19 @@ export default function TransactionManager() {
                             ? '📥'
                             : '💸')}
                       </span>
-                      <div>
-                        <p className="font-semibold">{t.description}</p>
-                        <p className="text-sm text-gray-600">
-                          {(t.category?.name || t.type.replace('_', ' '))} •{' '}
-                          {new Date(t.date).toLocaleDateString()}
-                          {t.to_account && ` → ${t.to_account.name}`}
-                        </p>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-gray-900 truncate">{t.description}</p>
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 text-xs text-gray-500">
+                          <span>{(t.category?.name || t.type.replace('_', ' '))}</span>
+                          <span className="hidden sm:inline">•</span>
+                          <span>{new Date(t.date).toLocaleDateString()}</span>
+                          {t.to_account && (
+                            <>
+                              <span className="hidden sm:inline">•</span>
+                              <span>→ {t.to_account.name}</span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                     <div className="text-right">
@@ -598,45 +953,82 @@ export default function TransactionManager() {
     );
   };
 
-  // ---------- Summary tab ----------
   const renderSummaryTab = () => (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Monthly Summary</h2>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <h2 className="text-xl font-semibold text-gray-900">Monthly Summary</h2>
         <input
           type="month"
           value={selectedMonth}
           onChange={(e) => setSelectedMonth(e.target.value)}
-          className="rounded border px-3 py-2"
+          className="rounded-lg border border-gray-300 px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         />
       </div>
 
-      {/* KPI cards */}
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <div className="rounded border border-emerald-200 bg-emerald-50 p-4">
-          <p className="text-sm text-emerald-700">Total Inflows</p>
-          <p className="text-2xl font-bold text-emerald-700">
-            ₹{monthly.totalIncome.toLocaleString('en-IN')}
-          </p>
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-gradient-to-br from-emerald-50 to-green-50 rounded-lg p-4 border border-emerald-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-emerald-700 font-medium">Total Inflows</p>
+              <p className="text-2xl font-bold text-emerald-800">
+                ₹{monthly.totalIncome.toLocaleString('en-IN')}
+              </p>
+            </div>
+            <span className="text-emerald-600 text-2xl">📈</span>
+          </div>
         </div>
-        <div className="rounded border border-rose-200 bg-rose-50 p-4">
-          <p className="text-sm text-rose-700">Total Outflows</p>
-          <p className="text-2xl font-bold text-rose-700">
-            ₹{monthly.totalExpenses.toLocaleString('en-IN')}
-          </p>
+        
+        <div className="bg-gradient-to-br from-rose-50 to-red-50 rounded-lg p-4 border border-rose-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-rose-700 font-medium">Total Outflows</p>
+              <p className="text-2xl font-bold text-rose-800">
+                ₹{monthly.totalExpenses.toLocaleString('en-IN')}
+              </p>
+            </div>
+            <span className="text-rose-600 text-2xl">📉</span>
+          </div>
         </div>
-        <div className="rounded border border-blue-200 bg-blue-50 p-4">
-          <p className="text-sm text-blue-700">Net</p>
-          <p className={`text-2xl font-bold ${monthly.net >= 0 ? 'text-blue-700' : 'text-rose-700'}`}>
-            ₹{monthly.net.toLocaleString('en-IN')}
-          </p>
+        
+        <div className={`bg-gradient-to-br rounded-lg p-4 border ${
+          monthly.net >= 0 
+            ? 'from-blue-50 to-indigo-50 border-blue-100' 
+            : 'from-orange-50 to-red-50 border-orange-100'
+        }`}>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className={`text-sm font-medium ${monthly.net >= 0 ? 'text-blue-700' : 'text-orange-700'}`}>
+                Net Change
+              </p>
+              <p className={`text-2xl font-bold ${monthly.net >= 0 ? 'text-blue-800' : 'text-orange-800'}`}>
+                ₹{monthly.net.toLocaleString('en-IN')}
+              </p>
+            </div>
+            <span className={`text-2xl ${monthly.net >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
+              {monthly.net >= 0 ? '📈' : '📉'}
+            </span>
+          </div>
+        </div>
+        
+        <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg p-4 border border-purple-100">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-purple-700 font-medium">Transactions</p>
+              <p className="text-2xl font-bold text-purple-800">
+                {monthly.transactionCount}
+              </p>
+            </div>
+            <span className="text-purple-600 text-2xl">📅</span>
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      {/* Charts Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Category Spending Pie */}
-        <div className="rounded border bg-white p-6">
-          <h3 className="mb-4 text-lg font-semibold">Spending by Category</h3>
+        <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Spending by Category</h3>
           {monthly.pieData.length > 0 ? (
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
@@ -662,45 +1054,101 @@ export default function TransactionManager() {
                       `₹${Number(value).toLocaleString('en-IN')}`,
                       'Amount',
                     ]}
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                    }}
                   />
                 </PieChart>
               </ResponsiveContainer>
             </div>
           ) : (
-            <p className="text-center text-gray-500">No expenses in selected month</p>
+            <div className="text-center py-8 text-gray-500">
+              <div className="text-4xl mb-2">📊</div>
+              <p>No expenses in selected month</p>
+            </div>
           )}
         </div>
 
         {/* Account Activity Bars */}
-        <div className="rounded border bg-white p-6">
-          <h3 className="mb-4 text-lg font-semibold">Account Activity</h3>
+        <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Account Activity</h3>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={monthly.accountBreakdown}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis tickFormatter={(v: number) => `₹${v.toLocaleString('en-IN')}`} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+                <YAxis tickFormatter={(v: number) => `₹${(v/1000).toFixed(0)}k`} tick={{ fontSize: 12 }} />
                 <Tooltip
                   formatter={(v: number | string) => [`₹${Number(v).toLocaleString('en-IN')}`, '']}
+                  contentStyle={{
+                    backgroundColor: 'white',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                  }}
                 />
-                <Bar dataKey="income" fill="#10b981" name="Income" />
-                <Bar dataKey="expenses" fill="#ef4444" name="Expenses" />
+                <Bar dataKey="income" fill="#10b981" name="Income" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="expenses" fill="#ef4444" name="Expenses" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
       </div>
 
+      {/* Daily Spending Trend */}
+      {monthly.dailyTrend.length > 0 && (
+        <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Daily Spending Trend</h3>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={monthly.dailyTrend}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis 
+                  dataKey="date" 
+                  tickFormatter={(v: string) => new Date(v).getDate().toString()}
+                  tick={{ fontSize: 12 }}
+                />
+                <YAxis tickFormatter={(v: number) => `₹${(v/1000).toFixed(0)}k`} tick={{ fontSize: 12 }} />
+                <Tooltip
+                  formatter={(val: number | string) => [
+                    `₹${Number(val).toLocaleString('en-IN')}`,
+                    'Spending',
+                  ]}
+                  labelFormatter={(v: string) => new Date(v).toLocaleDateString()}
+                  contentStyle={{
+                    backgroundColor: 'white',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                  }}
+                />
+                <Line 
+                  type="monotone" 
+                  dataKey="amount" 
+                  stroke="#ef4444" 
+                  strokeWidth={2} 
+                  dot={{ r: 4, fill: '#ef4444' }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
       {/* Category Breakdown Table */}
-      <div className="rounded border bg-white p-6">
-        <h3 className="mb-4 text-lg font-semibold">Category Breakdown</h3>
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Category Breakdown</h3>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
-              <tr className="border-b">
-                <th className="pb-2 text-left">Category</th>
-                <th className="pb-2 text-right">Amount</th>
-                <th className="pb-2 text-right">Transactions</th>
+              <tr className="border-b border-gray-200">
+                <th className="pb-3 text-left font-medium text-gray-700">Category</th>
+                <th className="pb-3 text-right font-medium text-gray-700">Amount</th>
+                <th className="pb-3 text-right font-medium text-gray-700">Transactions</th>
+                <th className="pb-3 text-right font-medium text-gray-700">% of Total</th>
               </tr>
             </thead>
             <tbody>
@@ -713,14 +1161,17 @@ export default function TransactionManager() {
                       t.date.startsWith(selectedMonth) &&
                       t.type === 'expense'
                   ).length;
+                  
+                  const percentage = monthly.totalExpenses > 0 ? (amount / monthly.totalExpenses) * 100 : 0;
 
                   return (
-                    <tr key={category} className="border-b">
-                      <td className="py-2">{category}</td>
-                      <td className="py-2 text-right">
+                    <tr key={category} className="border-b border-gray-100">
+                      <td className="py-3 font-medium text-gray-900">{category}</td>
+                      <td className="py-3 text-right font-semibold text-gray-900">
                         ₹{Number(amount).toLocaleString('en-IN')}
                       </td>
-                      <td className="py-2 text-right">{txCount}</td>
+                      <td className="py-3 text-right text-gray-600">{txCount}</td>
+                      <td className="py-3 text-right text-gray-600">{percentage.toFixed(1)}%</td>
                     </tr>
                   );
                 })}
@@ -731,36 +1182,205 @@ export default function TransactionManager() {
     </div>
   );
 
-  // ---------- Main render ----------
-  return (
-    <div className="space-y-4">
-      {/* Tabs */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
-          {([
-            { key: 'transactions', label: 'Transactions' },
-            { key: 'history', label: 'History' },
-            { key: 'summary', label: 'Summary' },
-          ] as const).map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === tab.key
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
+  const renderInsightsTab = () => (
+    <div className="space-y-6">
+      <h2 className="text-xl font-semibold text-gray-900">Financial Insights</h2>
+
+      {/* Key Insights Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg p-6 border border-blue-100">
+          <h3 className="text-sm font-medium text-blue-700 mb-2">Total Net Worth</h3>
+          <p className="text-3xl font-bold text-blue-900 mb-1">
+            ₹{insights.totalNetWorth.toLocaleString('en-IN')}
+          </p>
+          <p className="text-sm text-blue-600">Across all accounts</p>
+        </div>
+
+        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg p-6 border border-green-100">
+          <h3 className="text-sm font-medium text-green-700 mb-2">Avg Daily Spending</h3>
+          <p className="text-3xl font-bold text-green-900 mb-1">
+            ₹{Math.round(insights.avgDailySpending).toLocaleString('en-IN')}
+          </p>
+          <p className="text-sm text-green-600">Last 30 days</p>
+        </div>
+
+        <div className={`bg-gradient-to-br rounded-lg p-6 border ${
+          insights.spendingChange >= 0 
+            ? 'from-red-50 to-rose-50 border-red-100' 
+            : 'from-green-50 to-emerald-50 border-green-100'
+        }`}>
+          <h3 className={`text-sm font-medium mb-2 ${
+            insights.spendingChange >= 0 ? 'text-red-700' : 'text-green-700'
+          }`}>
+            Spending Change
+          </h3>
+          <p className={`text-3xl font-bold mb-1 ${
+            insights.spendingChange >= 0 ? 'text-red-900' : 'text-green-900'
+          }`}>
+            {insights.spendingChange >= 0 ? '+' : ''}{insights.spendingChange.toFixed(1)}%
+          </p>
+          <p className={`text-sm ${
+            insights.spendingChange >= 0 ? 'text-red-600' : 'text-green-600'
+          }`}>
+            vs previous month
+          </p>
+        </div>
       </div>
 
-      {/* Tab Content */}
-      {activeTab === 'transactions' && renderTransactionsTab()}
-      {activeTab === 'history' && renderHistoryTab()}
-      {activeTab === 'summary' && renderSummaryTab()}
+      {/* Top Category */}
+      {insights.topCategory && (
+        <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Top Spending Category</h3>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xl font-semibold text-gray-900">{insights.topCategory.name}</p>
+              <p className="text-sm text-gray-600">Last 30 days</p>
+            </div>
+            <div className="text-right">
+              <p className="text-2xl font-bold text-red-600">
+                ₹{insights.topCategory.amount.toLocaleString('en-IN')}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recent Activity Summary */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Activity</h3>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <div className="text-center">
+            <p className="text-2xl font-bold text-gray-900">{insights.last30DaysCount}</p>
+            <p className="text-sm text-gray-600">Transactions</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold text-green-600">
+              {transactions.filter(t => 
+                new Date(t.date) >= new Date(Date.now() - 30*24*60*60*1000) && 
+                t.type === 'income'
+              ).length}
+            </p>
+            <p className="text-sm text-gray-600">Income</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold text-red-600">
+              {transactions.filter(t => 
+                new Date(t.date) >= new Date(Date.now() - 30*24*60*60*1000) && 
+                t.type === 'expense'
+              ).length}
+            </p>
+            <p className="text-sm text-gray-600">Expenses</p>
+          </div>
+          <div className="text-center">
+            <p className="text-2xl font-bold text-blue-600">
+              {transactions.filter(t => 
+                new Date(t.date) >= new Date(Date.now() - 30*24*60*60*1000) && 
+                t.type === 'transfer'
+              ).length}
+            </p>
+            <p className="text-sm text-gray-600">Transfers</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Spending Tips */}
+      <div className="bg-gradient-to-br from-yellow-50 to-orange-50 rounded-lg border border-yellow-200 p-6">
+        <h3 className="text-lg font-semibold text-yellow-900 mb-4">💡 Smart Tips</h3>
+        <div className="space-y-3">
+          {insights.spendingChange > 20 && (
+            <div className="flex items-start gap-3">
+              <span className="text-yellow-600">⚠️</span>
+              <p className="text-yellow-800">
+                Your spending increased by {insights.spendingChange.toFixed(1)}% this month. 
+                Consider reviewing your {insights.topCategory?.name.toLowerCase()} expenses.
+              </p>
+            </div>
+          )}
+          {insights.avgDailySpending > 2000 && (
+            <div className="flex items-start gap-3">
+              <span className="text-yellow-600">💰</span>
+              <p className="text-yellow-800">
+                Your daily average spending is ₹{Math.round(insights.avgDailySpending).toLocaleString('en-IN')}. 
+                Setting a daily budget could help you save more.
+              </p>
+            </div>
+          )}
+          <div className="flex items-start gap-3">
+            <span className="text-yellow-600">📊</span>
+            <p className="text-yellow-800">
+              Track your expenses regularly to identify spending patterns and opportunities to save.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  // Main render
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-40">
+        <div className="px-4 sm:px-6 lg:px-8 py-4">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl font-bold text-gray-900">💰 Finance Manager</h1>
+            <button
+              onClick={() => setShowAddForm(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg transition-colors"
+            >
+              ➕
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="bg-white border-b border-gray-200 sticky top-16 z-30">
+        <div className="px-4 sm:px-6 lg:px-8">
+          <nav className="flex space-x-6 overflow-x-auto">
+            {([
+              { key: 'transactions', label: 'Transactions', icon: '📝' },
+              { key: 'history', label: 'History', icon: '📈' },
+              { key: 'summary', label: 'Summary', icon: '📊' },
+              { key: 'insights', label: 'Insights', icon: '💡' },
+            ] as const).map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
+                className={`flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap transition-colors ${
+                  activeTab === tab.key
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
+                }`}
+              >
+                <span className="text-base">{tab.icon}</span>
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="px-4 sm:px-6 lg:px-8 py-6 pb-20">
+        {activeTab === 'transactions' && renderTransactionsTab()}
+        {activeTab === 'history' && renderHistoryTab()}
+        {activeTab === 'summary' && renderSummaryTab()}
+        {activeTab === 'insights' && renderInsightsTab()}
+      </div>
+
+      {/* Mobile Add Button */}
+      <div className="fixed bottom-6 right-6 z-50 sm:hidden">
+        <button
+          onClick={() => setShowAddForm(true)}
+          className="bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-full shadow-lg transition-all transform hover:scale-105"
+        >
+          ➕
+        </button>
+      </div>
+
+      {/* Add Transaction Modal */}
+      {showAddForm && <AddTransactionForm />}
     </div>
   );
 }
