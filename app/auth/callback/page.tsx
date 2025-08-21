@@ -1,16 +1,25 @@
 'use client';
-import { useEffect } from 'react';
+export const dynamic = 'force-dynamic';
+
+import { Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
-export default function AuthCallback() {
+export default function AuthCallbackPage() {
+  return (
+    <Suspense fallback={<p className="p-6 text-gray-600">Signing you in…</p>}>
+      <AuthCallbackInner />
+    </Suspense>
+  );
+}
+
+function AuthCallbackInner() {
   const router = useRouter();
   const sp = useSearchParams();
 
   useEffect(() => {
     const code = sp.get('code');
     if (!code) {
-      // No code in URL? Go home (or show an error UI)
       router.replace('/');
       return;
     }
@@ -22,5 +31,6 @@ export default function AuthCallback() {
     })();
   }, [router, sp]);
 
-  return <p className="p-6 text-gray-600">Signing you in…</p>;
+  // Nothing to render here; the fallback above shows while params are available
+  return null;
 }
