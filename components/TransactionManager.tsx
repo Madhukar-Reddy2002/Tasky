@@ -43,46 +43,264 @@ type InsertTx = {
 
 const COLORS = ['#8884d8', '#82ca9d', '#ffc658', '#ff7300', '#8dd1e1', '#d084d0'];
 
+// FIXED: Component moved OUTSIDE to prevent keyboard closing issue
+const AddTransactionForm = ({ 
+  newTx, 
+  setNewTx, 
+  setShowAddForm, 
+  addTransaction, 
+  accounts, 
+  categories 
+}) => {
+  // Auto-focus first input on mount
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const firstInput = document.querySelector('#transaction-amount');
+      if (firstInput) {
+        firstInput.focus();
+      }
+    }, 100);
+    return () => clearTimeout(timer);
+  }, []);
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50 p-4">
+      <form 
+        onSubmit={addTransaction} 
+        className="bg-white rounded-t-lg sm:rounded-lg w-full max-w-lg max-h-[90vh] overflow-y-auto animate-slideUp"
+      >
+        <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between rounded-t-lg">
+          <h3 className="text-lg font-semibold">Add Transaction</h3>
+          <button
+            type="button"
+            onClick={() => setShowAddForm(false)}
+            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+          >
+            ✕
+          </button>
+        </div>
+        
+        <div className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
+            <select
+              value={newTx.type}
+              onChange={(e) => setNewTx({ ...newTx, type: e.target.value })}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            >
+              <option value="expense">💸 Expense</option>
+              <option value="income">💰 Income</option>
+              <option value="transfer">↔️ Transfer</option>
+              <option value="loan_given">📤 Loan Given</option>
+              <option value="loan_received">📥 Loan Received</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Amount</label>
+            <input
+              id="transaction-amount"
+              type="number"
+              placeholder="0.00"
+              value={newTx.amount}
+              onChange={(e) => setNewTx({ ...newTx, amount: e.target.value })}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              step="0.01"
+              required
+              inputMode="decimal"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+            <input
+              type="text"
+              placeholder="Enter description"
+              value={newTx.description}
+              onChange={(e) => setNewTx({ ...newTx, description: e.target.value })}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
+            <input
+              type="date"
+              value={newTx.date}
+              onChange={(e) => setNewTx({ ...newTx, date: e.target.value })}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              {newTx.type === 'transfer' ? 'From Account' : 'Account'}
+            </label>
+            <select
+              value={newTx.account_id}
+              onChange={(e) => setNewTx({ ...newTx, account_id: e.target.value })}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+              required
+            >
+              <option value="">Select account</option>
+              {accounts.map((acc) => (
+                <option key={acc.id} value={acc.id}>
+                  {acc.name} (₹{acc.balance.toLocaleString('en-IN')})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {newTx.type === 'transfer' && (
+            <div className="animate-fadeIn">
+              <label className="block text-sm font-medium text-gray-700 mb-2">To Account</label>
+              <select
+                value={newTx.to_account_id}
+                onChange={(e) => setNewTx({ ...newTx, to_account_id: e.target.value })}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                required
+              >
+                <option value="">Select account</option>
+                {accounts
+                  .filter((acc) => acc.id !== newTx.account_id)
+                  .map((acc) => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.name}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
+
+          {newTx.type === 'expense' && (
+            <div className="animate-fadeIn">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+              <select
+                value={newTx.category_id}
+                onChange={(e) => setNewTx({ ...newTx, category_id: e.target.value })}
+                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                required
+              >
+                <option value="">Select category</option>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.icon ?? '🏷️'} {cat.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-4">
+            <button
+              type="button"
+              onClick={() => setShowAddForm(false)}
+              className="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button 
+              type="submit" 
+              disabled={!newTx.amount || !newTx.description || !newTx.account_id}
+              className="flex-1 rounded-lg bg-blue-600 px-4 py-2.5 font-medium text-white hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+            >
+              Add Transaction
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+// Quick Add Button Component for frequently used transactions
+const QuickAddButtons = ({ onQuickAdd }) => {
+  const quickActions = [
+    { type: 'expense', category: 'Food', icon: '🍕', amount: 500 },
+    { type: 'expense', category: 'Transport', icon: '🚗', amount: 200 },
+    { type: 'expense', category: 'Shopping', icon: '🛒', amount: 1000 },
+    { type: 'income', category: 'Salary', icon: '💰', amount: 50000 },
+  ];
+
+  return (
+    <div className="flex gap-2 overflow-x-auto pb-2">
+      {quickActions.map((action, idx) => (
+        <button
+          key={idx}
+          onClick={() => onQuickAdd(action)}
+          className="flex-shrink-0 bg-white border border-gray-200 rounded-lg p-3 hover:bg-gray-50 transition-colors min-w-[100px]"
+        >
+          <div className="text-center">
+            <div className="text-2xl mb-1">{action.icon}</div>
+            <div className="text-xs font-medium text-gray-700">{action.category}</div>
+            <div className="text-xs text-gray-500">₹{action.amount}</div>
+          </div>
+        </button>
+      ))}
+    </div>
+  );
+};
+
+// Enhanced notification system
+const showNotification = (message, type = 'success') => {
+  // Create notification element
+  const notification = document.createElement('div');
+  notification.className = `fixed top-4 right-4 z-50 p-4 rounded-lg shadow-lg transform transition-all duration-300 ${
+    type === 'success' ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+  }`;
+  notification.innerHTML = `
+    <div class="flex items-center gap-2">
+      <span>${type === 'success' ? '✅' : '❌'}</span>
+      <span>${message}</span>
+    </div>
+  `;
+  
+  document.body.appendChild(notification);
+  
+  // Animate in
+  setTimeout(() => {
+    notification.style.transform = 'translateX(0)';
+  }, 10);
+  
+  // Remove after 3 seconds
+  setTimeout(() => {
+    notification.style.transform = 'translateX(100%)';
+    setTimeout(() => {
+      document.body.removeChild(notification);
+    }, 300);
+  }, 3000);
+};
+
 export default function TransactionManager() {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [transactions, setTransactions] = useState([]);
+  const [accounts, setAccounts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // UI State
-  const [activeTab, setActiveTab] = useState<TabKey>('transactions');
+  const [activeTab, setActiveTab] = useState('transactions');
   const [showAddForm, setShowAddForm] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [showBalances, setShowBalances] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'date' | 'amount'>('date');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [sortBy, setSortBy] = useState('date');
+  const [sortOrder, setSortOrder] = useState('desc');
 
   // Filters
-  const [selectedAccount, setSelectedAccount] = useState<'all' | string>('all');
-  const [selectedCategoryId, setSelectedCategoryId] = useState<'all' | string>('all');
-  const [selectedType, setSelectedType] = useState<'all' | TxType>('all');
-  const [dateRange, setDateRange] = useState<{ start: string; end: string }>({
-    start: '',
-    end: ''
-  });
+  const [selectedAccount, setSelectedAccount] = useState('all');
+  const [selectedCategoryId, setSelectedCategoryId] = useState('all');
+  const [selectedType, setSelectedType] = useState('all');
+  const [dateRange, setDateRange] = useState({ start: '', end: '' });
 
   // History tab
-  const [selectedHistoryAccount, setSelectedHistoryAccount] = useState<string>('');
+  const [selectedHistoryAccount, setSelectedHistoryAccount] = useState('');
 
   // Summary tab
-  const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toISOString().slice(0, 7));
 
-  // Form state
-  const [newTx, setNewTx] = useState<{
-    type: TxType;
-    amount: string;
-    description: string;
-    date: string;
-    account_id: string;
-    to_account_id: string;
-    category_id: string;
-  }>(() => ({
+  // Form state - ENHANCED: Better initial state management
+  const [newTx, setNewTx] = useState(() => ({
     type: 'expense',
     amount: '',
     description: '',
@@ -106,20 +324,20 @@ export default function TransactionManager() {
         .order('date', { ascending: false })
         .order('created_at', { ascending: false });
 
-      setTransactions((txData as Transaction[] | null) || []);
+      setTransactions(txData || []);
 
       const { data: accData } = await supabase
         .from('accounts')
         .select('id, name, balance')
         .order('name');
-      const accs = (accData as Account[] | null) || [];
+      const accs = accData || [];
       setAccounts(accs);
 
       const { data: catData } = await supabase
         .from('categories')
         .select('id, name, icon')
         .order('name');
-      setCategories((catData as Category[] | null) || []);
+      setCategories(catData || []);
 
       // Set defaults
       if (accs.length && !newTx.account_id) {
@@ -128,6 +346,8 @@ export default function TransactionManager() {
       if (accs.length && !selectedHistoryAccount) {
         setSelectedHistoryAccount(accs[0].id);
       }
+    } catch (error) {
+      showNotification('Error loading data: ' + error.message, 'error');
     } finally {
       setLoading(false);
     }
@@ -187,14 +407,10 @@ export default function TransactionManager() {
 
   // History calculations
   const historyRows = useMemo(() => {
-    if (!selectedHistoryAccount) {
-      return [] as Array<Transaction & { balance_after: number; change: number }>;
-    }
+    if (!selectedHistoryAccount) return [];
 
     const acc = accounts.find((a) => a.id === selectedHistoryAccount);
-    if (!acc) {
-      return [] as Array<Transaction & { balance_after: number; change: number }>;
-    }
+    if (!acc) return [];
 
     const txAsc = transactions
       .filter((t) => t.account_id === selectedHistoryAccount || t.to_account_id === selectedHistoryAccount)
@@ -222,8 +438,8 @@ export default function TransactionManager() {
     }, 0);
 
     let running = acc.balance - totalDelta;
-
-    const out: Array<Transaction & { balance_after: number; change: number }> = [];
+    const out = [];
+    
     for (const t of txAsc) {
       let change = 0;
       if (t.type === 'income' || t.type === 'loan_received') {
@@ -248,10 +464,10 @@ export default function TransactionManager() {
     const categorySpending = monthTx
       .filter((t) => t.type === 'expense' && t.category?.name)
       .reduce((acc, t) => {
-        const key = t.category!.name!;
+        const key = t.category.name;
         acc[key] = (acc[key] ?? 0) + t.amount;
         return acc;
-      }, {} as Record<string, number>);
+      }, {});
 
     const totalIncome = monthTx
       .filter((t) => t.type === 'income' || t.type === 'loan_received' || (t.type === 'transfer' && t.to_account_id))
@@ -293,7 +509,7 @@ export default function TransactionManager() {
         const day = t.date;
         acc[day] = (acc[day] || 0) + t.amount;
         return acc;
-      }, {} as Record<string, number>);
+      }, {});
 
     const dailyTrend = Object.entries(dailySpending)
       .sort(([a], [b]) => a.localeCompare(b))
@@ -311,7 +527,7 @@ export default function TransactionManager() {
     };
   }, [transactions, accounts, selectedMonth]);
 
-  // New insights calculations
+  // Enhanced insights calculations
   const insights = useMemo(() => {
     const last30Days = transactions.filter((t) => {
       const txDate = new Date(t.date);
@@ -343,10 +559,10 @@ export default function TransactionManager() {
       last30Days
         .filter((t) => t.type === 'expense' && t.category?.name)
         .reduce((acc, t) => {
-          const key = t.category!.name!;
+          const key = t.category.name;
           acc[key] = (acc[key] || 0) + t.amount;
           return acc;
-        }, {} as Record<string, number>)
+        }, {})
     ).sort(([, a], [, b]) => b - a)[0];
 
     const avgDailySpending = currentSpending / 30;
@@ -362,50 +578,83 @@ export default function TransactionManager() {
     };
   }, [transactions, accounts]);
 
-  // Actions
-  async function addTransaction(e: React.FormEvent) {
+  // ENHANCED: Actions with better error handling and notifications
+  async function addTransaction(e) {
     e.preventDefault();
-    const { data: userData } = await supabase.auth.getUser();
-    const uid = userData?.user?.id;
-    if (!uid) return;
+    
+    try {
+      const { data: userData } = await supabase.auth.getUser();
+      const uid = userData?.user?.id;
+      if (!uid) {
+        showNotification('Please log in to add transactions', 'error');
+        return;
+      }
 
-    const payload: InsertTx = {
-      user_id: uid,
-      type: newTx.type,
-      amount: parseFloat(newTx.amount || '0'),
-      description: newTx.description.trim(),
-      date: newTx.date,
-      account_id: newTx.account_id || null,
-      to_account_id: newTx.type === 'transfer' ? newTx.to_account_id : null,
-      category_id: newTx.type === 'expense' ? newTx.category_id : null,
-    };
+      const payload = {
+        user_id: uid,
+        type: newTx.type,
+        amount: parseFloat(newTx.amount || '0'),
+        description: newTx.description.trim(),
+        date: newTx.date,
+        account_id: newTx.account_id || null,
+        to_account_id: newTx.type === 'transfer' ? newTx.to_account_id : null,
+        category_id: newTx.type === 'expense' ? newTx.category_id : null,
+      };
 
-    const { error } = await supabase.from('transactions').insert([payload]);
-    if (error) {
-      alert('Error adding transaction: ' + error.message);
-      return;
+      const { error } = await supabase.from('transactions').insert([payload]);
+      if (error) throw error;
+
+      // Reset form with smart defaults
+      setNewTx((p) => ({
+        ...p,
+        amount: '',
+        description: '',
+        to_account_id: '',
+        // Keep category_id for expenses to make repeated entries faster
+        category_id: p.type === 'expense' ? p.category_id : '',
+      }));
+      
+      setShowAddForm(false);
+      await loadData();
+      showNotification('Transaction added successfully! 🎉');
+      
+    } catch (error) {
+      showNotification('Error adding transaction: ' + error.message, 'error');
     }
-
-    setNewTx((p) => ({
-      ...p,
-      amount: '',
-      description: '',
-      to_account_id: '',
-      category_id: p.category_id,
-    }));
-    setShowAddForm(false);
-    await loadData();
   }
 
-  async function deleteTransaction(id: string) {
+  async function deleteTransaction(id) {
     if (!confirm('Are you sure you want to delete this transaction?')) return;
     
-    const { error } = await supabase.from('transactions').delete().eq('id', id);
-    if (error) {
-      alert('Error deleting transaction: ' + error.message);
+    try {
+      const { error } = await supabase.from('transactions').delete().eq('id', id);
+      if (error) throw error;
+      
+      await loadData();
+      showNotification('Transaction deleted successfully');
+    } catch (error) {
+      showNotification('Error deleting transaction: ' + error.message, 'error');
+    }
+  }
+
+  // ENHANCED: Quick add functionality
+  function handleQuickAdd(action) {
+    const account = accounts[0]; // Use first account as default
+    if (!account) {
+      showNotification('Please add an account first', 'error');
       return;
     }
-    await loadData();
+
+    setNewTx({
+      type: action.type,
+      amount: action.amount.toString(),
+      description: action.category,
+      date: new Date().toISOString().split('T')[0],
+      account_id: account.id,
+      to_account_id: '',
+      category_id: categories.find(c => c.name === action.category)?.id || '',
+    });
+    setShowAddForm(true);
   }
 
   function clearFilters() {
@@ -416,16 +665,19 @@ export default function TransactionManager() {
     setDateRange({ start: '', end: '' });
   }
 
+  // ENHANCED: Better CSV export with more fields
   function exportTransactions() {
     const csv = [
-      ['Date', 'Description', 'Category', 'Account', 'Type', 'Amount'].join(','),
+      ['Date', 'Description', 'Category', 'Account', 'To Account', 'Type', 'Amount', 'Balance Impact'].join(','),
       ...filteredTransactions.map(t => [
         t.date,
         `"${t.description}"`,
         t.category?.name || '',
         t.account?.name || '',
+        t.to_account?.name || '',
         t.type,
-        t.amount
+        t.amount,
+        t.type === 'expense' || t.type === 'loan_given' ? -t.amount : t.amount
       ].join(','))
     ].join('\n');
 
@@ -435,11 +687,13 @@ export default function TransactionManager() {
     a.href = url;
     a.download = `transactions-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
+    
+    showNotification('Transactions exported successfully! 📊');
   }
 
-  // Mobile-optimized transaction card
-  const TransactionCard = ({ transaction }: { transaction: Transaction }) => (
-    <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+  // ENHANCED: Mobile-optimized transaction card with swipe actions
+  const TransactionCard = ({ transaction }) => (
+    <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3 flex-1 min-w-0">
           <span className="text-2xl flex-shrink-0">
@@ -491,228 +745,116 @@ export default function TransactionManager() {
     </div>
   );
 
-  // Enhanced mobile-friendly form
-  const AddTransactionForm = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50 p-4">
-      <form 
-        onSubmit={addTransaction} 
-        className="bg-white rounded-t-lg sm:rounded-lg w-full max-w-lg max-h-[90vh] overflow-y-auto"
-      >
-        <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Add Transaction</h3>
+  // Enhanced filter panel with preset ranges
+  const FilterPanel = () => {
+    const presetRanges = [
+      { label: 'Today', days: 0 },
+      { label: 'Week', days: 7 },
+      { label: 'Month', days: 30 },
+      { label: 'Quarter', days: 90 },
+    ];
+
+    const applyPresetRange = (days) => {
+      const end = new Date();
+      const start = new Date();
+      start.setDate(start.getDate() - days);
+      
+      setDateRange({
+        start: days === 0 ? end.toISOString().split('T')[0] : start.toISOString().split('T')[0],
+        end: end.toISOString().split('T')[0]
+      });
+    };
+
+    return (
+      <div className="bg-white border-t border-gray-200 p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <h3 className="font-medium text-gray-900">Filters</h3>
           <button
-            type="button"
-            onClick={() => setShowAddForm(false)}
-            className="p-2 hover:bg-gray-100 rounded-full transition-colors"
+            onClick={clearFilters}
+            className="text-sm text-blue-600 hover:text-blue-700"
           >
-            ✕
+            Clear All
           </button>
         </div>
         
-        <div className="p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
-            <select
-              value={newTx.type}
-              onChange={(e) => setNewTx({ ...newTx, type: e.target.value as TxType })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="expense">💸 Expense</option>
-              <option value="income">💰 Income</option>
-              <option value="transfer">↔️ Transfer</option>
-              <option value="loan_given">📤 Loan Given</option>
-              <option value="loan_received">📥 Loan Received</option>
-            </select>
+        {/* Preset Date Ranges */}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Quick Ranges</label>
+          <div className="flex gap-2 flex-wrap">
+            {presetRanges.map((range) => (
+              <button
+                key={range.label}
+                onClick={() => applyPresetRange(range.days)}
+                className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
+              >
+                {range.label}
+              </button>
+            ))}
           </div>
+        </div>
+        
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <select
+            value={selectedAccount}
+            onChange={(e) => setSelectedAccount(e.target.value)}
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="all">All Accounts</option>
+            {accounts.map((acc) => (
+              <option key={acc.id} value={acc.id}>
+                {acc.name}
+              </option>
+            ))}
+          </select>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Amount</label>
-            <input
-              type="number"
-              placeholder="0.00"
-              value={newTx.amount}
-              onChange={(e) => setNewTx({ ...newTx, amount: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              step="0.01"
-              required
-            />
-          </div>
+          <select
+            value={selectedCategoryId}
+            onChange={(e) => setSelectedCategoryId(e.target.value)}
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="all">All Categories</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
-            <input
-              type="text"
-              placeholder="Enter description"
-              value={newTx.description}
-              onChange={(e) => setNewTx({ ...newTx, description: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              required
-            />
-          </div>
+          <select
+            value={selectedType}
+            onChange={(e) => setSelectedType(e.target.value)}
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          >
+            <option value="all">All Types</option>
+            <option value="income">Income</option>
+            <option value="expense">Expense</option>
+            <option value="transfer">Transfer</option>
+            <option value="loan_given">Loan Given</option>
+            <option value="loan_received">Loan Received</option>
+          </select>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
+          <div className="flex gap-2">
             <input
               type="date"
-              value={newTx.date}
-              onChange={(e) => setNewTx({ ...newTx, date: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="From date"
+              value={dateRange.start}
+              onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+              className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <input
+              type="date"
+              placeholder="To date"
+              value={dateRange.end}
+              onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+              className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              {newTx.type === 'transfer' ? 'From Account' : 'Account'}
-            </label>
-            <select
-              value={newTx.account_id}
-              onChange={(e) => setNewTx({ ...newTx, account_id: e.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              required
-            >
-              <option value="">Select account</option>
-              {accounts.map((acc) => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.name} (₹{acc.balance.toLocaleString('en-IN')})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {newTx.type === 'transfer' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">To Account</label>
-              <select
-                value={newTx.to_account_id}
-                onChange={(e) => setNewTx({ ...newTx, to_account_id: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              >
-                <option value="">Select account</option>
-                {accounts
-                  .filter((acc) => acc.id !== newTx.account_id)
-                  .map((acc) => (
-                    <option key={acc.id} value={acc.id}>
-                      {acc.name}
-                    </option>
-                  ))}
-              </select>
-            </div>
-          )}
-
-          {newTx.type === 'expense' && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
-              <select
-                value={newTx.category_id}
-                onChange={(e) => setNewTx({ ...newTx, category_id: e.target.value })}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                required
-              >
-                <option value="">Select category</option>
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id}>
-                    {cat.icon ?? '🏷️'} {cat.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div className="flex gap-3 pt-4">
-            <button
-              type="button"
-              onClick={() => setShowAddForm(false)}
-              className="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button 
-              type="submit" 
-              className="flex-1 rounded-lg bg-blue-600 px-4 py-2.5 font-medium text-white hover:bg-blue-700 transition-colors"
-            >
-              Add Transaction
-            </button>
-          </div>
-        </div>
-      </form>
-    </div>
-  );
-
-  // Enhanced filter panel
-  const FilterPanel = () => (
-    <div className="bg-white border-t border-gray-200 p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h3 className="font-medium text-gray-900">Filters</h3>
-        <button
-          onClick={clearFilters}
-          className="text-sm text-blue-600 hover:text-blue-700"
-        >
-          Clear All
-        </button>
-      </div>
-      
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <select
-          value={selectedAccount}
-          onChange={(e) => setSelectedAccount(e.target.value)}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        >
-          <option value="all">All Accounts</option>
-          {accounts.map((acc) => (
-            <option key={acc.id} value={acc.id}>
-              {acc.name}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={selectedCategoryId}
-          onChange={(e) => setSelectedCategoryId(e.target.value)}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        >
-          <option value="all">All Categories</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.name}
-            </option>
-          ))}
-        </select>
-
-        <select
-          value={selectedType}
-          onChange={(e) => setSelectedType(e.target.value as 'all' | TxType)}
-          className="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        >
-          <option value="all">All Types</option>
-          <option value="income">Income</option>
-          <option value="expense">Expense</option>
-          <option value="transfer">Transfer</option>
-          <option value="loan_given">Loan Given</option>
-          <option value="loan_received">Loan Received</option>
-        </select>
-
-        <div className="flex gap-2">
-          <input
-            type="date"
-            placeholder="From date"
-            value={dateRange.start}
-            onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
-            className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-          <input
-            type="date"
-            placeholder="To date"
-            value={dateRange.end}
-            onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
-            className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
-  // Render functions for each tab
+  // ENHANCED: Transactions tab with quick add buttons
   const renderTransactionsTab = () => (
     <div className="space-y-4">
       {/* Header */}
@@ -737,17 +879,33 @@ export default function TransactionManager() {
           <button
             onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
             className="p-2.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
+            title={`Sort ${sortOrder === 'asc' ? 'Descending' : 'Ascending'}`}
           >
-            ↕️
+            {sortOrder === 'asc' ? '↑' : '↓'}
+          </button>
+          
+          <button
+            onClick={() => setSortBy(sortBy === 'date' ? 'amount' : 'date')}
+            className="p-2.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
+            title={`Sort by ${sortBy === 'date' ? 'Amount' : 'Date'}`}
+          >
+            {sortBy === 'date' ? '📅' : '💰'}
           </button>
           
           <button
             onClick={exportTransactions}
             className="p-2.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors"
+            title="Export to CSV"
           >
             💾
           </button>
         </div>
+      </div>
+
+      {/* Quick Add Buttons */}
+      <div className="space-y-2">
+        <h3 className="text-sm font-medium text-gray-700">Quick Add</h3>
+        <QuickAddButtons onQuickAdd={handleQuickAdd} />
       </div>
 
       {/* Search Bar */}
@@ -760,6 +918,14 @@ export default function TransactionManager() {
           onChange={(e) => setSearchQuery(e.target.value)}
           className="w-full pl-10 pr-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         />
+        {searchQuery && (
+          <button
+            onClick={() => setSearchQuery('')}
+            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       {/* Filter Panel */}
@@ -869,19 +1035,19 @@ export default function TransactionManager() {
                     <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                     <XAxis
                       dataKey="date"
-                      tickFormatter={(v: string) => new Date(v).toLocaleDateString()}
+                      tickFormatter={(v) => new Date(v).toLocaleDateString()}
                       tick={{ fontSize: 12 }}
                     />
                     <YAxis 
-                      tickFormatter={(v: number) => `₹${(v/1000).toFixed(0)}k`}
+                      tickFormatter={(v) => `₹${(v/1000).toFixed(0)}k`}
                       tick={{ fontSize: 12 }}
                     />
                     <Tooltip
-                      formatter={(val: number | string) => [
+                      formatter={(val) => [
                         `₹${Number(val).toLocaleString('en-IN')}`,
                         'Balance',
                       ]}
-                      labelFormatter={(v: string) => new Date(v).toLocaleDateString()}
+                      labelFormatter={(v) => new Date(v).toLocaleDateString()}
                       contentStyle={{
                         backgroundColor: 'white',
                         border: '1px solid #e5e7eb',
@@ -1038,7 +1204,7 @@ export default function TransactionManager() {
                     cx="50%"
                     cy="50%"
                     labelLine={false}
-                    label={({ name, percent = 0 }: { name: string; percent?: number }) =>
+                    label={({ name, percent = 0 }) =>
                       `${name} ${(percent * 100).toFixed(0)}%`
                     }
                     outerRadius={80}
@@ -1050,7 +1216,7 @@ export default function TransactionManager() {
                     ))}
                   </Pie>
                   <Tooltip
-                    formatter={(value: number | string) => [
+                    formatter={(value) => [
                       `₹${Number(value).toLocaleString('en-IN')}`,
                       'Amount',
                     ]}
@@ -1080,9 +1246,9 @@ export default function TransactionManager() {
               <BarChart data={monthly.accountBreakdown}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                <YAxis tickFormatter={(v: number) => `₹${(v/1000).toFixed(0)}k`} tick={{ fontSize: 12 }} />
+                <YAxis tickFormatter={(v) => `₹${(v/1000).toFixed(0)}k`} tick={{ fontSize: 12 }} />
                 <Tooltip
-                  formatter={(v: number | string) => [`₹${Number(v).toLocaleString('en-IN')}`, '']}
+                  formatter={(v) => [`₹${Number(v).toLocaleString('en-IN')}`, '']}
                   contentStyle={{
                     backgroundColor: 'white',
                     border: '1px solid #e5e7eb',
@@ -1108,16 +1274,16 @@ export default function TransactionManager() {
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis 
                   dataKey="date" 
-                  tickFormatter={(v: string) => new Date(v).getDate().toString()}
+                  tickFormatter={(v) => new Date(v).getDate().toString()}
                   tick={{ fontSize: 12 }}
                 />
-                <YAxis tickFormatter={(v: number) => `₹${(v/1000).toFixed(0)}k`} tick={{ fontSize: 12 }} />
+                <YAxis tickFormatter={(v) => `₹${(v/1000).toFixed(0)}k`} tick={{ fontSize: 12 }} />
                 <Tooltip
-                  formatter={(val: number | string) => [
+                  formatter={(val) => [
                     `₹${Number(val).toLocaleString('en-IN')}`,
                     'Spending',
                   ]}
-                  labelFormatter={(v: string) => new Date(v).toLocaleDateString()}
+                  labelFormatter={(v) => new Date(v).toLocaleDateString()}
                   contentStyle={{
                     backgroundColor: 'white',
                     border: '1px solid #e5e7eb',
@@ -1311,14 +1477,85 @@ export default function TransactionManager() {
               Track your expenses regularly to identify spending patterns and opportunities to save.
             </p>
           </div>
+          {insights.totalNetWorth > 100000 && (
+            <div className="flex items-start gap-3">
+              <span className="text-yellow-600">🎯</span>
+              <p className="text-yellow-800">
+                Great job building your net worth! Consider investing a portion for long-term growth.
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Spending Goals Section */}
+      <div className="bg-white rounded-lg border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Monthly Goals</h3>
+        <div className="space-y-4">
+          <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200">
+            <div>
+              <p className="font-medium text-green-800">Emergency Fund</p>
+              <p className="text-sm text-green-600">Target: 6 months of expenses</p>
+            </div>
+            <div className="text-right">
+              <p className="text-lg font-bold text-green-700">
+                {Math.round((insights.totalNetWorth / (insights.avgDailySpending * 30 * 6)) * 100)}%
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <div>
+              <p className="font-medium text-blue-800">Monthly Savings Rate</p>
+              <p className="text-sm text-blue-600">Target: 20% of income</p>
+            </div>
+            <div className="text-right">
+              <p className="text-lg font-bold text-blue-700">
+                {monthly.totalIncome > 0 ? Math.round(((monthly.totalIncome - monthly.totalExpenses) / monthly.totalIncome) * 100) : 0}%
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   );
 
-  // Main render
+  // Main render with enhanced animations
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Custom CSS for animations */}
+      <style jsx>{`
+        @keyframes slideUp {
+          from {
+            transform: translateY(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateY(0);
+            opacity: 1;
+          }
+        }
+        
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(10px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        
+        .animate-slideUp {
+          animation: slideUp 0.3s ease-out;
+        }
+        
+        .animate-fadeIn {
+          animation: fadeIn 0.2s ease-out;
+        }
+      `}</style>
+
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-40">
         <div className="px-4 sm:px-6 lg:px-8 py-4">
@@ -1326,7 +1563,8 @@ export default function TransactionManager() {
             <h1 className="text-2xl font-bold text-gray-900">💰 Finance Manager</h1>
             <button
               onClick={() => setShowAddForm(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg transition-colors"
+              className="bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg transition-all transform hover:scale-105 active:scale-95"
+              title="Add Transaction"
             >
               ➕
             </button>
@@ -1343,13 +1581,13 @@ export default function TransactionManager() {
               { key: 'history', label: 'History', icon: '📈' },
               { key: 'summary', label: 'Summary', icon: '📊' },
               { key: 'insights', label: 'Insights', icon: '💡' },
-            ] as const).map((tab) => (
+            ]).map((tab) => (
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key)}
-                className={`flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap transition-colors ${
+                className={`flex items-center gap-2 py-4 px-1 border-b-2 font-medium text-sm whitespace-nowrap transition-all ${
                   activeTab === tab.key
-                    ? 'border-blue-500 text-blue-600'
+                    ? 'border-blue-500 text-blue-600 transform scale-105'
                     : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'
                 }`}
               >
@@ -1369,18 +1607,27 @@ export default function TransactionManager() {
         {activeTab === 'insights' && renderInsightsTab()}
       </div>
 
-      {/* Mobile Add Button */}
+      {/* Enhanced Mobile Add Button */}
       <div className="fixed bottom-6 right-6 z-50 sm:hidden">
         <button
           onClick={() => setShowAddForm(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-full shadow-lg transition-all transform hover:scale-105"
+          className="bg-blue-600 hover:bg-blue-700 text-white p-4 rounded-full shadow-xl transition-all transform hover:scale-110 active:scale-95"
         >
-          ➕
+          <span className="text-xl">➕</span>
         </button>
       </div>
 
-      {/* Add Transaction Modal */}
-      {showAddForm && <AddTransactionForm />}
+      {/* Add Transaction Modal - FIXED: Now using the external component */}
+      {showAddForm && (
+        <AddTransactionForm
+          newTx={newTx}
+          setNewTx={setNewTx}
+          setShowAddForm={setShowAddForm}
+          addTransaction={addTransaction}
+          accounts={accounts}
+          categories={categories}
+        />
+      )}
     </div>
   );
 }
